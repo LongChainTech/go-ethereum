@@ -17,7 +17,6 @@
 package miner
 
 import (
-	"bytes"
 	"fmt"
 	"math/big"
 	"sync"
@@ -26,7 +25,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -44,7 +42,7 @@ const (
 
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of tx pool.
-	txChanSize = 4096
+	txChanSize = 16384
 	// chainHeadChanSize is the size of channel listening to ChainHeadEvent.
 	chainHeadChanSize = 10
 	// chainSideChanSize is the size of channel listening to ChainSideEvent.
@@ -423,18 +421,18 @@ func (self *worker) commitNewWork() {
 		return
 	}
 	// If we are care about TheDAO hard-fork check whether to override the extra-data or not
-	if daoBlock := self.config.DAOForkBlock; daoBlock != nil {
-		// Check whether the block is among the fork extra-override range
-		limit := new(big.Int).Add(daoBlock, params.DAOForkExtraRange)
-		if header.Number.Cmp(daoBlock) >= 0 && header.Number.Cmp(limit) < 0 {
-			// Depending whether we support or oppose the fork, override differently
-			if self.config.DAOForkSupport {
-				header.Extra = common.CopyBytes(params.DAOForkBlockExtra)
-			} else if bytes.Equal(header.Extra, params.DAOForkBlockExtra) {
-				header.Extra = []byte{} // If miner opposes, don't let it use the reserved extra-data
-			}
-		}
-	}
+	//if daoBlock := self.config.DAOForkBlock; daoBlock != nil {
+	//	// Check whether the block is among the fork extra-override range
+	//	limit := new(big.Int).Add(daoBlock, params.DAOForkExtraRange)
+	//	if header.Number.Cmp(daoBlock) >= 0 && header.Number.Cmp(limit) < 0 {
+	//		// Depending whether we support or oppose the fork, override differently
+	//		if self.config.DAOForkSupport {
+	//			header.Extra = common.CopyBytes(params.DAOForkBlockExtra)
+	//		} else if bytes.Equal(header.Extra, params.DAOForkBlockExtra) {
+	//			header.Extra = []byte{} // If miner opposes, don't let it use the reserved extra-data
+	//		}
+	//	}
+	//}
 	// Could potentially happen if starting to mine in an odd state.
 	err := self.makeCurrent(parent, header)
 	if err != nil {
@@ -443,9 +441,9 @@ func (self *worker) commitNewWork() {
 	}
 	// Create the current work task and check any fork transitions needed
 	work := self.current
-	if self.config.DAOForkSupport && self.config.DAOForkBlock != nil && self.config.DAOForkBlock.Cmp(header.Number) == 0 {
-		misc.ApplyDAOHardFork(work.state)
-	}
+	//if self.config.DAOForkSupport && self.config.DAOForkBlock != nil && self.config.DAOForkBlock.Cmp(header.Number) == 0 {
+	//	misc.ApplyDAOHardFork(work.state)
+	//}
 	pending, err := self.eth.TxPool().Pending()
 	if err != nil {
 		log.Error("Failed to fetch pending transactions", "err", err)

@@ -27,11 +27,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-	set "gopkg.in/fatih/set.v0"
+	"gopkg.in/fatih/set.v0"
 )
 
 // Ethash proof-of-work protocol constants.
@@ -275,12 +274,12 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainReader, header, parent *
 		}
 	}
 	// If all checks passed, validate any special fields for hard forks
-	if err := misc.VerifyDAOHeaderExtraData(chain.Config(), header); err != nil {
-		return err
-	}
-	if err := misc.VerifyForkHashes(chain.Config(), header, uncle); err != nil {
-		return err
-	}
+	//if err := misc.VerifyDAOHeaderExtraData(chain.Config(), header); err != nil {
+	//	return err
+	//}
+	//if err := misc.VerifyForkHashes(chain.Config(), header, uncle); err != nil {
+	//	return err
+	//}
 	return nil
 }
 
@@ -288,22 +287,24 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainReader, header, parent *
 // the difficulty that a new block should have when created at time
 // given the parent block's time and difficulty.
 func (ethash *Ethash) CalcDifficulty(chain consensus.ChainReader, time uint64, parent *types.Header) *big.Int {
-	return CalcDifficulty(chain.Config(), time, parent)
+	return CalcDifficulty(chain, time, parent)
 }
 
 // CalcDifficulty is the difficulty adjustment algorithm. It returns
 // the difficulty that a new block should have when created at time
 // given the parent block's time and difficulty.
-func CalcDifficulty(config *params.ChainConfig, time uint64, parent *types.Header) *big.Int {
-	next := new(big.Int).Add(parent.Number, big1)
-	switch {
-	case config.IsByzantium(next):
-		return calcDifficultyByzantium(time, parent)
-	case config.IsHomestead(next):
-		return calcDifficultyHomestead(time, parent)
-	default:
-		return calcDifficultyFrontier(time, parent)
-	}
+func CalcDifficulty(chain consensus.ChainReader, time uint64, parent *types.Header) *big.Int {
+	//next := new(big.Int).Add(parent.Number, big1)
+	//config := chain.Config()
+	//return calcDifficultyByBlockTime(chain, time, parent)
+	//switch {
+	//case config.IsByzantium(next):
+	//	return calcDifficultyByzantium(time, parent)
+	//case config.IsHomestead(next):
+	//	return calcDifficultyHomestead(time, parent)
+	//default:
+	return calcDifficultyHomestead(time, parent)
+	//}
 }
 
 // Some weird constants to avoid constant memory allocs for them.
@@ -311,11 +312,65 @@ var (
 	expDiffPeriod = big.NewInt(100000)
 	big1          = big.NewInt(1)
 	big2          = big.NewInt(2)
+	big3          = big.NewInt(3)
 	big9          = big.NewInt(9)
 	big10         = big.NewInt(10)
+	big12         = big.NewInt(12)
+	big16         = big.NewInt(16)
+	big2000       = big.NewInt(2000)
 	bigMinus99    = big.NewInt(-99)
+	bigMinus8400  = big.NewInt(-8400)
+	big8400       = big.NewInt(8400)
+	big42000      = big.NewInt(42000)
 	big2999999    = big.NewInt(2999999)
 )
+
+func calcDifficultyByBlockTime(chain consensus.ChainReader, time uint64, parent *types.Header) *big.Int {
+	bigTime0 := new(big.Int).SetUint64(time)
+	bigTime1 := new(big.Int)
+	if parent != nil {
+		bigTime1.Set(parent.Time)
+	} else {
+		bigTime1.Sub(bigTime0, big2000)
+	}
+	if parent.Number.Cmp(big3) < 0 {
+		return parent.Difficulty
+	}
+	grandParentHeader := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1)
+	bigTime2 := new(big.Int)
+	if grandParentHeader != nil {
+		bigTime2.Set(grandParentHeader.Time)
+	} else {
+		bigTime2.Sub(bigTime1, big2000)
+	}
+	ancestorHeader := chain.GetHeader(grandParentHeader.ParentHash, grandParentHeader.Number.Uint64()-1)
+	bigTime3 := new(big.Int).Set(ancestorHeader.Time)
+	if ancestorHeader != nil {
+		bigTime3.Set(ancestorHeader.Time)
+	} else {
+		bigTime3.Sub(bigTime2, big2000)
+	}
+	x := new(big.Int)
+	y := new(big.Int)
+	z := new(big.Int)
+	x.Mul(bigTime0, big16)
+	y.Mul(bigTime1, big12)
+	x.Sub(x, y)
+	y.Mul(bigTime2, big3)
+	x.Sub(x, y)
+	x.Sub(x, bigTime3)
+	x.Sub(x, big42000)
+	if x.Cmp(bigMinus8400) < 0 {
+		x.Set(bigMinus8400)
+	}
+	if x.Cmp(big8400) > 0 {
+		x.Set(big8400)
+	}
+	z.Div(parent.Difficulty, big42000)
+	z.Mul(z, x)
+	z.Add(parent.Difficulty, z)
+	return z
+}
 
 // calcDifficultyByzantium is the difficulty adjustment algorithm. It returns
 // the difficulty that a new block should have when created at time given the
@@ -412,16 +467,16 @@ func calcDifficultyHomestead(time uint64, parent *types.Header) *big.Int {
 		x.Set(params.MinimumDifficulty)
 	}
 	// for the exponential factor
-	periodCount := new(big.Int).Add(parent.Number, big1)
-	periodCount.Div(periodCount, expDiffPeriod)
+	//periodCount := new(big.Int).Add(parent.Number, big1)
+	//periodCount.Div(periodCount, expDiffPeriod)
 
 	// the exponential factor, commonly referred to as "the bomb"
 	// diff = diff + 2^(periodCount - 2)
-	if periodCount.Cmp(big1) > 0 {
-		y.Sub(periodCount, big2)
-		y.Exp(big2, y, nil)
-		x.Add(x, y)
-	}
+	//if periodCount.Cmp(big1) > 0 {
+	//	y.Sub(periodCount, big2)
+	//	y.Exp(big2, y, nil)
+	//	x.Add(x, y)
+	//}
 	return x
 }
 
@@ -429,33 +484,33 @@ func calcDifficultyHomestead(time uint64, parent *types.Header) *big.Int {
 // difficulty that a new block should have when created at time given the parent
 // block's time and difficulty. The calculation uses the Frontier rules.
 func calcDifficultyFrontier(time uint64, parent *types.Header) *big.Int {
-	diff := new(big.Int)
-	adjust := new(big.Int).Div(parent.Difficulty, params.DifficultyBoundDivisor)
-	bigTime := new(big.Int)
-	bigParentTime := new(big.Int)
-
-	bigTime.SetUint64(time)
-	bigParentTime.Set(parent.Time)
-
-	if bigTime.Sub(bigTime, bigParentTime).Cmp(params.DurationLimit) < 0 {
-		diff.Add(parent.Difficulty, adjust)
-	} else {
-		diff.Sub(parent.Difficulty, adjust)
-	}
-	if diff.Cmp(params.MinimumDifficulty) < 0 {
-		diff.Set(params.MinimumDifficulty)
-	}
-
-	periodCount := new(big.Int).Add(parent.Number, big1)
-	periodCount.Div(periodCount, expDiffPeriod)
-	if periodCount.Cmp(big1) > 0 {
-		// diff = diff + 2^(periodCount - 2)
-		expDiff := periodCount.Sub(periodCount, big2)
-		expDiff.Exp(big2, expDiff, nil)
-		diff.Add(diff, expDiff)
-		diff = math.BigMax(diff, params.MinimumDifficulty)
-	}
-	return diff
+	//diff := new(big.Int)
+	//adjust := new(big.Int).Div(parent.Difficulty, params.DifficultyBoundDivisor)
+	//bigTime := new(big.Int)
+	//bigParentTime := new(big.Int)
+	//
+	//bigTime.SetUint64(time)
+	//bigParentTime.Set(parent.Time)
+	//
+	//if bigTime.Sub(bigTime, bigParentTime).Cmp(params.DurationLimit) < 0 {
+	//	diff.Add(parent.Difficulty, adjust)
+	//} else {
+	//	diff.Sub(parent.Difficulty, adjust)
+	//}
+	//if diff.Cmp(params.MinimumDifficulty) < 0 {
+	//	diff.Set(params.MinimumDifficulty)
+	//}
+	//
+	//periodCount := new(big.Int).Add(parent.Number, big1)
+	//periodCount.Div(periodCount, expDiffPeriod)
+	//if periodCount.Cmp(big1) > 0 {
+	//	// diff = diff + 2^(periodCount - 2)
+	//	expDiff := periodCount.Sub(periodCount, big2)
+	//	expDiff.Exp(big2, expDiff, nil)
+	//	diff.Add(diff, expDiff)
+	//	diff = math.BigMax(diff, params.MinimumDifficulty)
+	//}
+	return big1
 }
 
 // VerifySeal implements consensus.Engine, checking whether the given block satisfies

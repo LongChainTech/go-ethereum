@@ -18,13 +18,13 @@ package core
 
 import (
 	"errors"
-	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/common/math"
 )
 
 var (
@@ -84,7 +84,7 @@ func IntrinsicGas(data []byte, contractCreation, homestead bool) (uint64, error)
 	} else {
 		gas = params.TxGas
 	}
-	// Bump the required gas by the amount of transactional data
+	//Bump the required gas by the amount of transactional data
 	if len(data) > 0 {
 		// Zero and non-zero bytes are priced differently
 		var nz uint64

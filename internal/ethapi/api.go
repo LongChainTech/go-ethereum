@@ -1231,6 +1231,72 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Sen
 	return submitTransaction(ctx, s.b, signed)
 }
 
+func unlockAccount(s *PublicTransactionPoolAPI, addr common.Address, password string, duration *uint64) (bool, error) {
+	const max = uint64(time.Duration(math.MaxInt64) / time.Second)
+	var d time.Duration
+	if duration == nil {
+		d = 24 * time.Hour
+	} else if *duration > max {
+		return false, errors.New("unlock duration too large")
+	} else {
+		d = time.Duration(*duration) * time.Second
+	}
+	err := fetchKeystore(s.b.AccountManager()).TimedUnlock(accounts.Account{Address: addr}, password, d)
+	return err == nil, err
+}
+
+func (s *PublicTransactionPoolAPI) Test(ctx context.Context) (error) {
+	am := s.b.AccountManager()
+	ws := am.Wallets()
+
+	if _, err := s.b.SuggestPrice(ctx); err != nil {
+		return err
+	} else {
+		var chainID *big.Int
+		if config := s.b.ChainConfig(); config.IsEIP155(s.b.CurrentBlock().Number()) {
+			chainID = config.ChainID
+		}
+
+		for i, w := range ws {
+			go unlockAccount(s, w.Accounts()[0].Address, "111", nil)
+			fmt.Println(fmt.Sprintf("UnlockAccount %v", w.Accounts()[0].Address))
+			time.Sleep(2 * time.Second)
+			go func(i int, w accounts.Wallet) {
+				fmt.Println(fmt.Sprintf("%v begin at %v", i, time.Now().Unix()-time.Unix(0, 0).Unix()))
+				if nonce, err := s.b.GetPoolNonce(ctx, w.Accounts()[0].Address); err != nil {
+					log.Error("get nonce error", "error", err)
+				} else {
+					tstart := time.Now().Unix()
+					for j := 0; j > -1; j++ {
+						if j%25000 == 24999 {
+							if now := time.Now().Unix(); now < tstart+5 {
+								wait := time.Duration(tstart+5-now) * time.Second
+								log.Info("Send too many transactions", "wait", common.PrettyDuration(wait))
+								time.Sleep(wait)
+							}
+						}
+						tx := types.NewTransaction(
+							nonce+uint64(j),
+							ws[(i+1)%len(ws)].Accounts()[0].Address,
+							(&big.Int{}).Exp(big.NewInt(10), big.NewInt(14), big.NewInt(0)),
+							90000,
+							big.NewInt(0),
+							nil)
+						if signed, err := w.SignTx(w.Accounts()[0], tx, chainID); err != nil {
+							log.Error("sign transaction error", "error", err)
+							break
+						} else {
+							s.b.SendTx(ctx, signed)
+						}
+					}
+				}
+			}(i, w)
+		}
+
+		return nil
+	}
+}
+
 // SendRawTransaction will add the signed transaction to the transaction pool.
 // The sender is responsible for signing the transaction and using the correct nonce.
 func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encodedTx hexutil.Bytes) (common.Hash, error) {
